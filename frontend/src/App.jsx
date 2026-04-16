@@ -1,11 +1,15 @@
-
+import {BrowserRouter,Routes,Route} from 'react-router-dom'
 import './App.css'
 
 function App() {
   
   return (
     <>
-      <h1 className='bg-blue-500'>Welcome to EMS frontend</h1>
+      <BrowserRouter>
+        <Routes>
+          <Route path='/' element={<Login/>}/>
+        </Routes>
+      </BrowserRouter>
     </>
   )
 }
