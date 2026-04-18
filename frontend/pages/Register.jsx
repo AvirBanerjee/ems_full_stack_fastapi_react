@@ -17,7 +17,7 @@ function Login() {
         <input type="text" placeholder='Username' onChange={e=>setForm({...form,fullname:e.target.value})} />
        <input type="text" placeholder='E-Email' onChange={e=>setForm({...form,email:e.target.value})} />
        <input type="password" placeholder='password' onChange={e=>setForm({...form,password:e.target.value})}/>
-       <button>Login</button>
+       <button>Register</button>
     </form>
   )
 }

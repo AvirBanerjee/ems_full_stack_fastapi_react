@@ -1,208 +1,255 @@
-from fastapi import FastAPI,HTTPException,Depends
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 
-from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List
-from sqlalchemy import create_engine,Column,Integer,String,Boolean,ForeignKey
-from sqlalchemy.orm import declarative_base ,sessionmaker,Session,relationship
 
-from jose import jwt,JWTError
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy.orm import declarative_base, sessionmaker, Session, relationship
+
+from jose import jwt, JWTError
 from passlib.context import CryptContext
-from datetime import datetime,timedelta
+from datetime import datetime, timedelta
 
-#APP
-app=FastAPI(
-    title="Employee Managment Api",
-    version="1.0"
+
+# -------------------- APP --------------------
+app = FastAPI(
+    title="Employee Management API",
+    version="2.0"
 )
 
-#CORS
+
+# -------------------- CORS --------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],#Needs to be changed in future #typo in allow_orgins
+    allow_origins=["*"],   # change in production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"]
 )
 
-#DB
-DATABASE_URL="sqlite:///./app.db"
 
-engine=create_engine(
+# -------------------- DATABASE --------------------
+DATABASE_URL = "sqlite:///./app.db"
+
+engine = create_engine(
     DATABASE_URL,
-    connect_args={"check_same_thread":False}
+    connect_args={"check_same_thread": False}
 )
 
-SessionLocal=sessionmaker(
+SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine
 )
 
-Base=declarative_base()
+Base = declarative_base()
 
-# Models
 
+# -------------------- MODELS --------------------
 class UserDB(Base):
-    __tablename__="users"
+    __tablename__ = "users"
 
-    id=Column(Integer,primary_key=True,index=True)
-    fullname=Column(String)
-    email=Column(String,unique=True)
-    password=Column(String)
+    id = Column(Integer, primary_key=True, index=True)
+    fullname = Column(String)
+    email = Column(String, unique=True)
+    password = Column(String)
 
-    employs=relationship("EmployDB",back_populates="owner") # back_populates typo error
+    employs = relationship("EmployDB", back_populates="owner")
+
 
 class EmployDB(Base):
-    __tablename__="employs"
+    __tablename__ = "employs"
 
-    id=Column(Integer,primary_key=True,index=True)
-    fullname=Column(String)
-    email=Column(String,unique=True) #unique typo error
-    isOnProject=Column(Boolean)
-    experience=Column(Integer)
-    completed=Column(Integer)
-    description=Column(String)
+    id = Column(Integer, primary_key=True, index=True)
+    fullname = Column(String)
+    email = Column(String)  # removed unique constraint (optional decision)
+    isOnProject = Column(Boolean)
+    experience = Column(Integer)
+    completed = Column(Integer)
+    description = Column(String)
 
-    user_id = Column(Integer, ForeignKey("users.id")) # changed
-    owner=relationship("UserDB",back_populates="employs")
+    user_id = Column(Integer, ForeignKey("users.id"))
+    owner = relationship("UserDB", back_populates="employs")
+
 
 Base.metadata.create_all(bind=engine)
 
-# schemas
+
+# -------------------- SCHEMAS (Pydantic v2) --------------------
+
+# request schema (no id here)
 class UserCreate(BaseModel):
-    id:int
     fullname: str
     email: str
-    password: str # password added
+    password: str
 
-    class Config:
-        orm_mode=True
+
+# response schema
 class UserResponse(BaseModel):
-    id:int
-    fullname:str
-    email:str
+    id: int
+    fullname: str
+    email: str
 
-    class Config:
-        orm_mode=True
+    model_config = ConfigDict(from_attributes=True)
+
 
 class EmployCreate(BaseModel):
-    fullname:str
-    email:str
-    isOnProject:bool
-    experience:int
-    completed:int
-    description:str
+    fullname: str
+    email: str
+    isOnProject: bool
+    experience: int
+    completed: int
+    description: str
+
+
+class EmployResponse(EmployCreate):
+    id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
 
 class Token(BaseModel):
-    access_token:str # changed = with :
-    token_type:str
+    access_token: str
+    token_type: str
 
-# security 
 
-SECRET_KEY="SUPERSECRETSHHHHHHHHH"
-ALGORITHM="HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES=60
+# -------------------- SECURITY --------------------
+SECRET_KEY = "SUPERSECRETSHHHHHHHHH"
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
-pwd_context=CryptContext(
-    schemes=["bcrypt"], #typo of bcryt
+pwd_context = CryptContext(
+    schemes=["bcrypt"],
     deprecated="auto"
 )
 
-def hash_password(password:str) ->str:
-    return pwd_context.hash(password)
-
-oauth2_scheme=OAuth2PasswordBearer(
+oauth2_scheme = OAuth2PasswordBearer(
     tokenUrl="/api/v1/login"
 )
 
+
+def hash_password(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain, hashed):
+    return pwd_context.verify(plain, hashed)
+
+
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+
+# -------------------- DEPENDENCIES --------------------
 def get_db():
-    db=SessionLocal()
+    db = SessionLocal()
     try:
         yield db
     finally:
-        db.close()    
+        db.close()
 
-def verify_password(plain,hashed):
-    return pwd_context.verify(plain,hashed)
-   
-def create_access_token(data:dict):
-    to_encode=data.copy()
-    expire=datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp":expire})
-    token=jwt.encode(to_encode,SECRET_KEY,algorithm=ALGORITHM)
-    return token
 
 def get_current_user(
-        token:str =Depends(oauth2_scheme),
-        db: Session =Depends(get_db)
-    ):
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
+):
     try:
-        payload=jwt.decode(token,SECRET_KEY,algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("email")
+
         if email is None:
-            raise HTTPException(status_code=401,detail="Invalid Token")
+            raise HTTPException(status_code=401, detail="Invalid token")
+
     except JWTError:
-        raise HTTPException(status_code=401,detail="Token error")   
-    user=db.query(UserDB).filter(UserDB.email == email).first()
-    if user is None:
-        raise HTTPException(status_code=401,detail="User not found")
+        raise HTTPException(status_code=401, detail="Token error")
+
+    user = db.query(UserDB).filter(UserDB.email == email).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
     return user
 
-API_V1="/api/v1"
 
-#register
-@app.post(API_V1 + "/register",response_model=UserResponse)
-def register_user(user:UserCreate,db:Session=Depends(get_db)):
-    existing=db.query(UserDB).filter(UserDB.email==user.email).first()
+API_V1 = "/api/v1"
+
+
+# -------------------- AUTH ROUTES --------------------
+
+# REGISTER
+@app.post(API_V1 + "/register", response_model=UserResponse)
+def register_user(user: UserCreate, db: Session = Depends(get_db)):
+
+    existing = db.query(UserDB).filter(UserDB.email == user.email).first()
+
     if existing:
-        raise HTTPException(status_code=400,detail="User already exixts")
-    new_user=UserDB(
+        raise HTTPException(status_code=400, detail="User already exists")
+
+    new_user = UserDB(
         fullname=user.fullname,
         email=user.email,
         password=hash_password(user.password)
     )
+
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+
     return new_user
 
-#login
-@app.post(API_V1 + "/login",response_model=Token)
+
+# LOGIN (OAuth2 form-based)
+@app.post(API_V1 + "/login", response_model=Token)
 def login_user(
-    form_data:OAuth2PasswordRequestForm=Depends(),
-    db:Session = Depends(get_db)
-    ):
-    user=db.query(UserDB).filter(UserDB.email == form_data.username).first()
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+
+    user = db.query(UserDB).filter(
+        UserDB.email == form_data.username   # username = email
+    ).first()
+
     if not user:
-        raise HTTPException(status_code=400,detail="Invalid Email")
-    if not verify_password(form_data.password,user.password):
-        raise HTTPException(status_code=400,detail="Invalid password")  
-    access_token=create_access_token(
-        data={"email":user.email}
-    )    
-    return{
-        "access_token":access_token,
-        "token_type":"bearer"
+        raise HTTPException(status_code=400, detail="Invalid email")
+
+    if not verify_password(form_data.password, user.password):
+        raise HTTPException(status_code=400, detail="Invalid password")
+
+    access_token = create_access_token(
+        data={"email": user.email}
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
     }
 
+
+# -------------------- DASHBOARD --------------------
 @app.get(API_V1 + "/dashboard")
-def dashboard(current_user:UserDB=Depends(get_current_user)):
-    return{
-        "fullname":current_user.fullname,
-        "email":current_user.email,
-        "total_employs":len(current_user.employs)
+def dashboard(current_user: UserDB = Depends(get_current_user)):
+    return {
+        "fullname": current_user.fullname,
+        "email": current_user.email,
+        "total_employs": len(current_user.employs)
     }
 
-#creating employee
-@app.post(API_V1+"/employ")
+
+# -------------------- EMPLOYEE CRUD --------------------
+
+# CREATE
+@app.post(API_V1 + "/employ", response_model=dict)
 def create_employ(
-    employ:EmployCreate,
-    db: Session =Depends(get_db),
-    current_user:UserDB =Depends(get_current_user)
-    ):
-    new_employ=EmployDB(
+    employ: EmployCreate,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    new_employ = EmployDB(
         fullname=employ.fullname,
         email=employ.email,
         isOnProject=employ.isOnProject,
@@ -211,66 +258,83 @@ def create_employ(
         description=employ.description,
         owner=current_user
     )
+
     db.add(new_employ)
     db.commit()
 
-    return{
-        "message":"employ created succesfully"
-        }
+    return {"message": "Employee created successfully"}
 
-# get all users
-@app.get(API_V1 + "/employs")
+
+# GET ALL
+@app.get(API_V1 + "/employs", response_model=List[EmployResponse])
 def get_employs(
-    db: Session = Depends(get_db),
-    current_user:UserDB = Depends(get_current_user)
-    ):
+    current_user: UserDB = Depends(get_current_user)
+):
     return current_user.employs
 
-# get single user
-@app.get(API_V1 + "/employ/{id}")
+
+# GET SINGLE (SECURED)
+@app.get(API_V1 + "/employ/{id}", response_model=EmployResponse)
 def get_employ(
-    id:int,
+    id: int,
     db: Session = Depends(get_db),
-    current_user:UserDB = Depends(get_current_user)
-    ):
-    employ=db.query(EmployDB).filter(EmployDB.id == id).first()
+    current_user: UserDB = Depends(get_current_user)
+):
+    employ = db.query(EmployDB).filter(
+        EmployDB.id == id,
+        EmployDB.user_id == current_user.id
+    ).first()
+
     if not employ:
-        raise HTTPException(status_code=404,detail="Employee not found")
+        raise HTTPException(status_code=404, detail="Employee not found")
+
     return employ
 
-# update employe
-@app.put(API_V1 +"/employ/{id}")
-def update_employ(
-    id:int,
-    data:EmployCreate,
-    db: Session = Depends(get_db),
-    current_user:UserDB = Depends(get_current_user)
-    ):
-    employ=db.query(EmployDB).filter(EmployDB.id == id).first()
-    if not employ:
-        raise HTTPException(status_code=404,detail="Employee not found")
-    #removed commas bcoz it was making it tupple insted of assignment
-    employ.fullname=data.fullname
-    employ.email=data.email
-    employ.isOnProject=data.isOnProject
-    employ.experience=data.experience
-    employ.completed=data.completed
-    employ.description=data.description
-    
-    db.commit()
-    return { "message":"employee updated successfully"}
 
-# Delete employee
-@app.delete(API_V1 + "/employ/{id}")
-def delete_employ( # name change from get_employ
-    id:int,
+# UPDATE
+@app.put(API_V1 + "/employ/{id}")
+def update_employ(
+    id: int,
+    data: EmployCreate,
     db: Session = Depends(get_db),
-    current_user:UserDB = Depends(get_current_user)
-    ):
-    employ=db.query(EmployDB).filter(EmployDB.id == id).first()
+    current_user: UserDB = Depends(get_current_user)
+):
+    employ = db.query(EmployDB).filter(
+        EmployDB.id == id,
+        EmployDB.user_id == current_user.id
+    ).first()
+
     if not employ:
-        raise HTTPException(status_code=404,detail="Employee not found")
+        raise HTTPException(status_code=404, detail="Employee not found")
+
+    employ.fullname = data.fullname
+    employ.email = data.email
+    employ.isOnProject = data.isOnProject
+    employ.experience = data.experience
+    employ.completed = data.completed
+    employ.description = data.description
+
+    db.commit()
+
+    return {"message": "Employee updated successfully"}
+
+
+# DELETE
+@app.delete(API_V1 + "/employ/{id}")
+def delete_employ(
+    id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user)
+):
+    employ = db.query(EmployDB).filter(
+        EmployDB.id == id,
+        EmployDB.user_id == current_user.id
+    ).first()
+
+    if not employ:
+        raise HTTPException(status_code=404, detail="Employee not found")
+
     db.delete(employ)
     db.commit()
 
-    return {"message":"Employee deleted succesfull"}
+    return {"message": "Employee deleted successfully"}

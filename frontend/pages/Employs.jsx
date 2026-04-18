@@ -1,33 +1,52 @@
-import React from 'react'
-import Navbar from '../components/Navbar'
-import EmployCard from '../components/EmployCard'
-import API from '../api/axios'
-import { useState,useEffect } from 'react'
+import React, { useState, useEffect } from "react";
+import Navbar from "../components/Navbar";
+import EmployCard from "../components/EmployCard";
+import API from "../api/axios";
 
 function Employs() {
-  const [data,setData]=useState([])
-  const fetchData=()=>{
-    API.get("/employs").then(res=>setData(res.data))
-  }
-  useEffect(()=>{
-    fetchData()
-  },[])
+  const [data, setData] = useState([]);
 
-  const handleDelete=async(id)=>{
-    if(!window.confirm("Delete?")) return;
-    await API.delete(`/employ/${is}`)
-  }
+  const fetchData = async () => {
+    try {
+      const res = await API.get("/employs");
+      setData(res.data);
+    } catch (err) {
+      console.error("Fetch failed:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete?")) return;
+
+    try {
+      await API.delete(`/employ/${id}`);
+      setData(prev => prev.filter(emp => emp.id !== id));
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
 
   return (
     <div>
-      <Navbar/>
-      {
-        data.map(emp=>(
-            <EmployCard key={emp.id} onDelete={handleDelete}></EmployCard>
+      <Navbar />
+
+      {data.length === 0 ? (
+        <p>No Employees Found</p>
+      ) : (
+        data.map(emp => (
+          <EmployCard
+            key={emp.id}
+            emp={emp}
+            onDelete={handleDelete}
+          />
         ))
-      }
+      )}
     </div>
-  )
+  );
 }
 
-export default Employs
+export default Employs;
