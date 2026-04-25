@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import API from '../api/axios';
 
 function EditEmploy() {
-  const { id } = useParams();   // correct extraction
+  const  { id }= useParams();   // correct extraction
   const navigate = useNavigate();
 
   // initialized structure to avoid null crash
